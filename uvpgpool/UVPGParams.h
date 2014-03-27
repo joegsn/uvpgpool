@@ -43,11 +43,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <libpq-fe.h>
 #include <stdint.h>
 
-//#if defined(_MSC_VER)
-//#include <BaseTsd.h>
-//typedef SSIZE_T ssize_t;
-//#endif
-
 // format options for paramFormats to PQsendQueryParams/PQexeParams
 #define FORMAT_TEXT   0
 #define FORMAT_BINARY 1
@@ -56,7 +51,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 class UVPGParams
 {
 	size_t param_count;
-	//ssize_t param_array_size;
 	std::vector<char *>param_values;
 	std::vector<int>param_length;
 	std::vector<int>param_format;

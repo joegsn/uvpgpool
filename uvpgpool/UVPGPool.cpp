@@ -139,7 +139,7 @@ UVPGPool::UVPGPool(uv_loop_t *in_loop, const char *in_connstring, unsigned in_mi
 }
 UVPGPool::~UVPGPool()
 {
-	ssize_t count = connections.size();
+	size_t count = connections.size();
 	for(int ix = 0; ix < count; ++ix)
 	{
 		disconnect(connections[ix]);
@@ -166,9 +166,9 @@ void UVPGPool::createNewConnections(unsigned newcount)
 	if(newcount == 0)
 		newcount = min_free_connections;
 	
-	ssize_t num_entries = connections.size();
+	size_t num_entries = connections.size();
 	unsigned created_count = 0;
-	for(ssize_t jx = 0; created_count < newcount && jx < num_entries; ++jx)
+	for(size_t jx = 0; created_count < newcount && jx < num_entries; ++jx)
 	{
 		if(atomicCAS(&(connections[jx]->status), &(ConnStatus::cs_invalid), ConnStatus::cs_connecting))
 		{
@@ -260,8 +260,8 @@ void UVPGPool::disconnect(UVPGConnEntry *entry)
 }
 UVPGConnEntry *UVPGPool::findConnEntry(PGconn *conn)
 {
-	ssize_t count = connections.size();
-	for(ssize_t ix = 0; ix < count; ++ix)
+	size_t count = connections.size();
+	for(size_t ix = 0; ix < count; ++ix)
 	{
 		if(connections[ix]->conn == conn)
 			return connections[ix];
@@ -275,7 +275,7 @@ PGconn *UVPGPool::getFreeConn()
 	// grab the first available connection (least recently used)
 	// shove it onto the busy list.
 	PGconn *nextconn = NULL;
-	ssize_t count = connections.size();
+	size_t count = connections.size();
 	for(unsigned ix = 0; ix < count; ++ix)
 	{
 		if(atomicCAS(&(connections[ix]->status), &(ConnStatus::cs_available), ConnStatus::cs_busy))
@@ -302,9 +302,9 @@ PGconn *UVPGPool::getFreeConn()
 	}
 	
 	// see if we need to create a new connection, if we're full.
-	ssize_t ccount = connections.size();
+	size_t ccount = connections.size();
 	unsigned free_count = 0;
-	for(ssize_t ix = 0; ix < ccount; ++ix)
+	for(size_t ix = 0; ix < ccount; ++ix)
 	{
 		if(connections[ix]->status == ConnStatus::cs_available ||
 		   connections[ix]->status == ConnStatus::cs_connecting)
