@@ -36,9 +36,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "UVPGPool.h"
 #include <assert.h>
-#include <algorithm>
 #include <atomic>
-
 
 uint8_t ConnStatus::cs_invalid = 0;
 uint8_t ConnStatus::cs_disconnecting = 1;

@@ -4,7 +4,7 @@ UVPGPool is a C++ class which presents a very basic [PostgreSQL](http://postgres
 
 It has an additional dependency on C++11 for std::atomic.
 
-UVPGParams is an optional class which I use to simplify my life when using PQsendQueryParams.
+UVPGParams is an optional class which I use to simplify my life when using PQsendQueryParams.  UVPGParams is what depends on the uvpg_pgtypes.cpp and byteorder_endian.h files.
 
 ## Using UVPGPool
 
