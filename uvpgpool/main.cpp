@@ -59,7 +59,7 @@ void on_periodic_timer(uv_timer_t *handle, int status)
 		params.add("Joe");
 		int res = PQsendQueryParams(conn,
 									"SELECT count(*) FROM users WHERE username ILIKE $1",
-									3, NULL, params.values(), params.lengths(), params.formats(), 1);
+									(int)params.size(), NULL, params.values(), params.lengths(), params.formats(), 1);
 		printf("result: %d\n", res);
 		pool->executeOnResult(conn, pg_result_cb);
 	}
