@@ -40,34 +40,53 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <assert.h>
 
 UVPGParams::UVPGParams()
-: param_count(0)
+: param_count(0), alloc_pos(0)
 {
 	
 }
 UVPGParams::UVPGParams(size_t starting_size)
-: param_count(0)
+: param_count(0), alloc_pos(0)
 {
 	set_param_size(starting_size);
 }
 UVPGParams::~UVPGParams()
 {
-	for(size_t ix = 0; ix < param_values.size(); ++ix)
-	{
-		if(param_stored[ix] && param_values[ix])
-			free(param_values[ix]);
-	}
+	
+}
+
+char *UVPGParams::alloc(size_t size)
+{
+	assert(alloc_pos + size < alloc_data.size());
+	char *mem = &(alloc_data[alloc_pos]);
+	alloc_pos += size;
+	return mem;
+}
+
+inline void UVPGParams::add(const char *input, int length, int format, Oid oid)
+{
+	param_values[param_count] = input;
+	param_length[param_count] = length;
+	param_format[param_count] = format;
+	param_oid[param_count]    = oid;
+	++param_count;
 }
 
 bool UVPGParams::set_param_size(const size_t size)
 {
-	assert(size > 0);
+	// reserve space, so that we don't need to individually do allocations
+	// for each integer/float that we use.
+	size_t new_alloc_data_size = size * sizeof(int64_t);
+	if(new_alloc_data_size > alloc_data.capacity())
+	{
+		alloc_data.reserve(new_alloc_data_size);
+	}
+	
 	if(param_values.capacity() < size && size > 0)
 	{
 		param_values.reserve(size);
 		param_length.reserve(size);
 		param_format.reserve(size);
 		param_oid.reserve(size);
-		param_stored.reserve(size);
 		return true;
 	}
 	if(param_values.capacity() >= size && size > 0)
@@ -75,64 +94,36 @@ bool UVPGParams::set_param_size(const size_t size)
 	return false;
 }
 
-void UVPGParams::add(char *input)
+void UVPGParams::add(const char *input)
 {
 	set_param_size(param_count + 1);
-	param_values.push_back(input);
-	param_length.push_back((int)strlen(input));
-	param_format.push_back(FORMAT_TEXT);
-	param_oid.push_back(TEXTOID);
-	param_stored.push_back(false);
-	++param_count;
+	add(input, (int)strlen(input), FORMAT_TEXT, TEXTOID);
 }
-void UVPGParams::add(char *input, const size_t size)
+void UVPGParams::add(const char *input, const size_t size)
 {
 	set_param_size(param_count + 1);
-	param_values.push_back(input);
-	param_length.push_back((int)size);
-	param_format.push_back(FORMAT_BINARY);
-	param_oid.push_back(BYTEAOID);
-	param_stored.push_back(false);
-	++param_count;
+	add(input, (int)size, FORMAT_BINARY, BYTEAOID);
 }
 void UVPGParams::add(const int16_t input)
 {
 	set_param_size(param_count+1);
-	char *data = (char *)malloc(sizeof(input));
-	int16_t temp = htobe16(input);
-	memcpy(data, &(temp), sizeof(input));
-	param_values.push_back(data);
-	param_length.push_back((int)sizeof(input));
-	param_format.push_back(FORMAT_BINARY);
-	param_oid.push_back(INT2OID);
-	param_stored.push_back(true);
-	++param_count;
+	int16_t *data = (int16_t *)alloc(sizeof(input));
+	*data = htobe16(input);
+	add((char *)data, (int)sizeof(input), FORMAT_BINARY, INT2OID);
 }
 void UVPGParams::add(const int32_t input)
 {
 	set_param_size(param_count+1);
-	char *data = (char *)malloc(sizeof(input));
-	int32_t temp = htobe32(input);
-	memcpy(data, &(temp), sizeof(input));
-	param_values.push_back(data);
-	param_length.push_back((int)sizeof(input));
-	param_format.push_back(FORMAT_BINARY);
-	param_oid.push_back(INT4OID);
-	param_stored.push_back(true);
-	++param_count;
+	int32_t *data = (int32_t *)alloc(sizeof(input));
+	*data = htobe32(input);
+	add((char *)data, (int)sizeof(input), FORMAT_BINARY, INT4OID);
 }
 void UVPGParams::add(const int64_t input)
 {
 	set_param_size(param_count+1);
-	char *data = (char *)malloc(sizeof(input));
-	int64_t temp = htobe64(input);
-	memcpy(data, &(temp), sizeof(input));
-	param_values.push_back(data);
-	param_length.push_back((int)sizeof(input));
-	param_format.push_back(FORMAT_BINARY);
-	param_oid.push_back(INT8OID);
-	param_stored.push_back(true);
-	++param_count;
+	int64_t *data = (int64_t *)alloc(sizeof(input));
+	*data = htobe64(input);
+	add((char *)data, (int)sizeof(input), FORMAT_BINARY, INT8OID);
 }
 void UVPGParams::add(const float input)
 {
@@ -141,17 +132,11 @@ void UVPGParams::add(const float input)
 		float fval;
 		uint32_t ival;
 	} value;
-	set_param_size(param_count+1);
-	char *data = (char *)malloc(sizeof(input));
 	value.fval = input;
-	uint32_t temp = htobe32(value.ival);
-	memcpy(data, &(temp), sizeof(input));
-	param_values.push_back(data);
-	param_length.push_back((int)sizeof(input));
-	param_format.push_back(FORMAT_BINARY);
-	param_oid.push_back(FLOAT4OID);
-	param_stored.push_back(true);
-	++param_count;
+	set_param_size(param_count+1);
+	int32_t *data = (int32_t *)alloc(sizeof(input));
+	*data = htobe32(value.ival);
+	add((char *)data, (int)sizeof(input), FORMAT_BINARY, FLOAT4OID);
 }
 void UVPGParams::add(const double input)
 {
@@ -160,16 +145,10 @@ void UVPGParams::add(const double input)
 		double dval;
 		uint64_t ival;
 	} value;
-	set_param_size(param_count+1);
-	char *data = (char *)malloc(sizeof(input));
 	value.dval = input;
-	uint64_t temp = htobe64(value.ival);
-	memcpy(data, &(temp), sizeof(input));
-	param_values.push_back(data);
-	param_length.push_back((int)sizeof(input));
-	param_format.push_back(FORMAT_BINARY);
-	param_oid.push_back(FLOAT8OID);
-	param_stored.push_back(true);
-	++param_count;
+	set_param_size(param_count+1);
+	int64_t *data = (int64_t *)alloc(sizeof(input));
+	*data = htobe64(value.ival);
+	add((char *)data, (int)sizeof(input), FORMAT_BINARY, FLOAT8OID);
 }
 

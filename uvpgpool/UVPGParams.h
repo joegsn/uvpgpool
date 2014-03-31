@@ -50,12 +50,18 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 class UVPGParams
 {
+private:
 	size_t param_count;
-	std::vector<char *>param_values;
+	std::vector<const char *>param_values;
 	std::vector<int>param_length;
 	std::vector<int>param_format;
 	std::vector<Oid>param_oid;
-	std::vector<bool>param_stored;
+	
+	std::vector<char> alloc_data;
+	size_t alloc_pos;
+	char *alloc(size_t size);
+	
+	void add(const char *input, int length, int format, Oid oid);
 	
 public:
 	UVPGParams();
@@ -64,10 +70,8 @@ public:
 	
 	bool set_param_size(const size_t size);
 	
-	void add(char *input);
-	void add(const char *input) { add((char *)input); }
-	void add(char *input, const size_t size);
-	void add(const char *input, const size_t size) { add((char *)input, size); }
+	void add(const char *input);
+	void add(const char *input, const size_t size);
 	void add(const int16_t input);
 	void add(const int32_t input);
 	void add(const int64_t input);
