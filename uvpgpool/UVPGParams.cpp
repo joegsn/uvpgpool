@@ -56,7 +56,7 @@ UVPGParams::~UVPGParams()
 
 char *UVPGParams::alloc(size_t size)
 {
-	assert(alloc_pos + size < alloc_data.size());
+	assert(alloc_pos + size < alloc_data.capacity());
 	char *mem = &(alloc_data[alloc_pos]);
 	alloc_pos += size;
 	return mem;
@@ -64,6 +64,7 @@ char *UVPGParams::alloc(size_t size)
 
 inline void UVPGParams::add(const char *input, int length, int format, Oid oid)
 {
+	set_param_size(param_count + 1);
 	param_values[param_count] = input;
 	param_length[param_count] = length;
 	param_format[param_count] = format;
@@ -96,31 +97,26 @@ bool UVPGParams::set_param_size(const size_t size)
 
 void UVPGParams::add(const char *input)
 {
-	set_param_size(param_count + 1);
 	add(input, (int)strlen(input), FORMAT_TEXT, TEXTOID);
 }
 void UVPGParams::add(const char *input, const size_t size)
 {
-	set_param_size(param_count + 1);
 	add(input, (int)size, FORMAT_BINARY, BYTEAOID);
 }
 void UVPGParams::add(const int16_t input)
 {
-	set_param_size(param_count+1);
 	int16_t *data = (int16_t *)alloc(sizeof(input));
 	*data = htobe16(input);
 	add((char *)data, (int)sizeof(input), FORMAT_BINARY, INT2OID);
 }
 void UVPGParams::add(const int32_t input)
 {
-	set_param_size(param_count+1);
 	int32_t *data = (int32_t *)alloc(sizeof(input));
 	*data = htobe32(input);
 	add((char *)data, (int)sizeof(input), FORMAT_BINARY, INT4OID);
 }
 void UVPGParams::add(const int64_t input)
 {
-	set_param_size(param_count+1);
 	int64_t *data = (int64_t *)alloc(sizeof(input));
 	*data = htobe64(input);
 	add((char *)data, (int)sizeof(input), FORMAT_BINARY, INT8OID);
@@ -133,7 +129,7 @@ void UVPGParams::add(const float input)
 		uint32_t ival;
 	} value;
 	value.fval = input;
-	set_param_size(param_count+1);
+	
 	int32_t *data = (int32_t *)alloc(sizeof(input));
 	*data = htobe32(value.ival);
 	add((char *)data, (int)sizeof(input), FORMAT_BINARY, FLOAT4OID);
@@ -146,7 +142,7 @@ void UVPGParams::add(const double input)
 		uint64_t ival;
 	} value;
 	value.dval = input;
-	set_param_size(param_count+1);
+	
 	int64_t *data = (int64_t *)alloc(sizeof(input));
 	*data = htobe64(value.ival);
 	add((char *)data, (int)sizeof(input), FORMAT_BINARY, FLOAT8OID);
