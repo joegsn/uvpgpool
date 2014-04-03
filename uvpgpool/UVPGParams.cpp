@@ -42,7 +42,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 UVPGParams::UVPGParams()
 : param_count(0), alloc_pos(0)
 {
-	
+	set_param_size(1);
 }
 UVPGParams::UVPGParams(size_t starting_size)
 : param_count(0), alloc_pos(0)
@@ -76,7 +76,9 @@ bool UVPGParams::set_param_size(const size_t size)
 {
 	// reserve space, so that we don't need to individually do allocations
 	// for each integer/float that we use.
-	size_t new_alloc_data_size = size * sizeof(int64_t);
+	// reserve an additional space for allocations, since if we do it
+	// all on the fly later, we'll need it.
+	size_t new_alloc_data_size = (size + 1) * sizeof(int64_t);
 	if(new_alloc_data_size > alloc_data.capacity())
 	{
 		alloc_data.reserve(new_alloc_data_size);
