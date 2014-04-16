@@ -55,7 +55,8 @@ typedef void (*uvpg_result_cb)(PGconn *conn, void *data);
 class ConnStatus
 {
 public:
-	static uint8_t cs_invalid, cs_disconnecting, cs_connecting, cs_available, cs_busy, cs_validating;
+	static uint8_t cs_invalid, cs_disconnecting, cs_connecting, cs_available,
+	cs_busy, cs_validating, cs_idle_ready;
 };
 
 
@@ -86,6 +87,7 @@ class UVPGPool
 private:
 	uv_loop_t *eventloop;
 	const char *connstring;
+	uv_async_t reset_msg;
 	
 	unsigned min_connections;
 	unsigned min_free_connections;
@@ -106,6 +108,7 @@ public:
 	// routines used internally for a connection.
 	void connectionFailed(UVPGConnEntry *entry);
 	void connectionReady(UVPGConnEntry *entry);
+	void checkIdleConnections();
 	
 	// routines for getting a connection, and getting rid of it (because you're done).
 	PGconn *getFreeConn();
@@ -118,6 +121,5 @@ public:
 	void executeOnResult(PGconn *in_conn, uvpg_result_cb callback, uvpg_result_cb failure_cb=NULL);
 	void executeOnResult(PGconn *in_conn, void *data, uvpg_result_cb callback, uvpg_result_cb failure_cb=NULL);
 };
-	
 
 #endif /* defined(__UVPGPool__) */

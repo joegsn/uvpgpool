@@ -44,6 +44,7 @@ uint8_t ConnStatus::cs_connecting = 2;
 uint8_t ConnStatus::cs_available = 3;
 uint8_t ConnStatus::cs_busy = 4;
 uint8_t ConnStatus::cs_validating = 5;
+uint8_t ConnStatus::cs_idle_ready = 6;
 
 // two reasons for this function:
 // 1- "std::atomic_compare_exchange_strong" is too long to type/read.
@@ -64,16 +65,21 @@ void uvpg_read_result(uv_poll_t *poll, int status, int events)
 		// got some sort of readable event.  let's find out.
 		int pgres;
 		uvpg_result *result = (uvpg_result *)poll->data;
+		assert(result != NULL);
 		UVPGConnEntry *entry = result->entry;
 		pgres = PQconsumeInput(entry->conn);
 		if(pgres == 0)
 		{
 			// trouble consuming.
+			uv_poll_stop(poll);
 			//printf("DEBUG: PG error: %s\n", PQerrorMessage(entry->conn));
 			if(result->failure_cb)
 				result->failure_cb(entry->conn, result->data);
 			else
 				result->result_cb(entry->conn, result->data);
+			poll->data = NULL;
+			delete(result);
+			return;
 		}
 		pgres = PQisBusy(entry->conn);
 		if(pgres == 0)
@@ -127,15 +133,23 @@ static void uvpg_connection_poll(uv_poll_t *poll)
 	}
 }
 
+static void uvpg_connection_reset(uv_async_t *async, int status)
+{
+	UVPGPool *pool = (UVPGPool *)async->data;
+	pool->checkIdleConnections();
+}
+
 //
 // UVPGPool
 //
 
 UVPGPool::UVPGPool(uv_loop_t *in_loop, const char *in_connstring, unsigned in_min_connections, unsigned in_min_free_connections, unsigned in_max_free_connections)
 : eventloop(in_loop), connstring(in_connstring), min_connections(in_min_connections),
-  min_free_connections(in_min_free_connections), max_free_connections(in_max_free_connections)
+min_free_connections(in_min_free_connections), max_free_connections(in_max_free_connections)
 {
 	createNewConnections(min_connections);
+	uv_async_init(eventloop, &reset_msg, uvpg_connection_reset);
+	reset_msg.data = this;
 }
 UVPGPool::~UVPGPool()
 {
@@ -224,6 +238,13 @@ void UVPGPool::connectionReady(UVPGConnEntry *entry)
 {
 	// connection has become ready, move it to our available connections queue.
 	atomicCAS(&(entry->status), &(ConnStatus::cs_connecting), ConnStatus::cs_available);
+}
+void UVPGPool::checkIdleConnections()
+{
+	for(size_t ix = 0; ix < connections.size(); ++ix)
+	{
+		atomicCAS(&(connections[ix]->status), &(ConnStatus::cs_idle_ready), ConnStatus::cs_available);
+	}
 }
 
 void UVPGPool::disconnect(PGconn *conn)
@@ -328,11 +349,13 @@ void UVPGPool::returnConnection(PGconn *in_conn)
 	{
 		uv_poll_stop(&(entry->poller)); // just in case it's in the middle of anything.
 		
+		// clean up the connection
 		PGresult *res = PQgetResult(entry->conn);
 		while(res != NULL) {
 			PQclear(res);
 			res = PQgetResult(entry->conn);
 		}
+		entry->poller.data = NULL;
 		
 		// check the PQstatus to make sure it's not actually in the middle of anything
 		// and that we haven't been lied to.  If we've been lied to, set to connecting & reset.
@@ -340,7 +363,8 @@ void UVPGPool::returnConnection(PGconn *in_conn)
 		{
 			case PQTRANS_IDLE:
 				// this one is idle.
-				entry->status.store(ConnStatus::cs_available);
+				entry->status.store(ConnStatus::cs_idle_ready);
+				uv_async_send(&reset_msg);
 				break;
 			default:
 				PQreset(entry->conn);
