@@ -207,7 +207,7 @@ void UVPGPool::createNewConnections(unsigned newcount)
 	{
 		UVPGConnEntry *entry = new UVPGConnEntry;
 		entry->conn = PQconnectStart(connstring);
-		entry->status = ConnStatus::cs_connecting;
+		entry->status.store(ConnStatus::cs_connecting);
 		connections.push_back(entry);
 		if(entry->conn)
 		{
@@ -231,13 +231,14 @@ void UVPGPool::connectionFailed(UVPGConnEntry *entry)
 	{
 		PQfinish(entry->conn);
 		entry->conn = NULL;
-		entry->status = ConnStatus::cs_invalid;
+		entry->status.store(ConnStatus::cs_invalid);
 	}
 }
 void UVPGPool::connectionReady(UVPGConnEntry *entry)
 {
 	// connection has become ready, move it to our available connections queue.
 	atomicCAS(&(entry->status), &(ConnStatus::cs_connecting), ConnStatus::cs_available);
+	checkQueuedRequests();
 }
 void UVPGPool::checkIdleConnections()
 {
@@ -245,6 +246,7 @@ void UVPGPool::checkIdleConnections()
 	{
 		atomicCAS(&(connections[ix]->status), &(ConnStatus::cs_idle_ready), ConnStatus::cs_available);
 	}
+	checkQueuedRequests();
 }
 
 void UVPGPool::disconnect(PGconn *conn)
@@ -269,13 +271,13 @@ void UVPGPool::disconnect(UVPGConnEntry *entry)
 	{
 		set_disconnect = true;
 	}
-	if(set_disconnect && entry->status == ConnStatus::cs_disconnecting)
+	if(set_disconnect && entry->status.load() == ConnStatus::cs_disconnecting)
 	{
 		// since once a status is set to disconnecting, that thread will be responsible for cleanup
 		// and invalidation, this operation is fine here, as we set disconnect on this entry
 		PQfinish(entry->conn);
 		entry->conn	= NULL;
-		entry->status = ConnStatus::cs_invalid;
+		entry->status.store(ConnStatus::cs_invalid);
 		uv_poll_stop(&(entry->poller));
 	}
 }
@@ -327,8 +329,9 @@ PGconn *UVPGPool::getFreeConn()
 	unsigned free_count = 0;
 	for(size_t ix = 0; ix < ccount; ++ix)
 	{
-		if(connections[ix]->status == ConnStatus::cs_available ||
-		   connections[ix]->status == ConnStatus::cs_connecting)
+		int connstatus = connections[ix]->status.load();
+		if(connstatus == ConnStatus::cs_available ||
+		   connstatus == ConnStatus::cs_connecting)
 			free_count++;
 	}
 	if(free_count < min_free_connections)
@@ -398,4 +401,56 @@ void UVPGPool::executeOnResult(PGconn *in_conn, void *data, uvpg_result_cb callb
 	result->data	= data;
 	
 	executeOnResult(result, callback, failure_cb);
+}
+
+void UVPGPool::sendQueryAndDo(const char *query, UVPGParams *params, int resultFormat, void *data, uvpg_result_cb callback, uvpg_result_cb failure_cb)
+{
+	printf("sendQuery&Do: query: %s\n", query);
+	// try to get a free connection
+	PGconn *conn = getFreeConn();
+	// if success, do PQsendQueryParams,
+	if(conn)
+	{
+		PQsendQueryParams(conn, query, (int)params->size(), params->oids(), params->values(), params->lengths(), params->formats(), resultFormat);
+		executeOnResult(conn, data, callback, failure_cb);
+	}
+	// if failure, queue request up, and wait for free connection.
+	else
+	{
+		UVPGQuery *pgquery = new UVPGQuery;
+		pgquery->query = strdup(query);
+		pgquery->params = new UVPGParams(*params);
+		pgquery->resultFormat = resultFormat;
+		pgquery->userdata = data;
+		pgquery->callback = callback;
+		pgquery->failure_cb = failure_cb;
+		printf("Adding pending query\n");
+		pendingQueries.push(pgquery);
+	}
+}
+
+void UVPGPool::checkQueuedRequests()
+{
+	// check if we have any queued requests, and try to execute them.
+	printf("pending queries: %lu\n", pendingQueries.size());
+	//printf("Pending queries: %s\n", pendingQueries.empty() ? "no" : "yes");
+	while(!pendingQueries.empty())
+	{
+		// try to get a free connection
+		PGconn *conn = getFreeConn();
+		if(conn)
+		{
+			// execute this pending query.
+			UVPGQuery *pgquery = pendingQueries.front();
+			pendingQueries.pop();
+			UVPGParams *params = pgquery->params;
+			PQsendQueryParams(conn, pgquery->query, (int)params->size(), params->oids(),
+							  params->values(), params->lengths(), params->formats(), pgquery->resultFormat);
+			executeOnResult(conn, pgquery->userdata, pgquery->callback, pgquery->failure_cb);
+			delete params;
+			delete pgquery;
+		}
+		else
+			break;
+	}
 }

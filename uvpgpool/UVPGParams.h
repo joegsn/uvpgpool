@@ -61,11 +61,12 @@ private:
 	size_t alloc_pos;
 	char *alloc(size_t size);
 	
-	void add(const char *input, int length, int format, Oid oid);
+	void add(const char *input, int length, int format, Oid oid, bool dup=false);
 	
 public:
 	UVPGParams();
 	UVPGParams(size_t starting_size);
+	UVPGParams(const UVPGParams &rhs);
 	~UVPGParams();
 	
 	bool set_param_size(const size_t size);

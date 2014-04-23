@@ -49,6 +49,24 @@ UVPGParams::UVPGParams(size_t starting_size)
 {
 	set_param_size(starting_size);
 }
+UVPGParams::UVPGParams(const UVPGParams &rhs)
+: param_count(0), alloc_pos(0)
+{
+	// copy, allocating our own space for all paramters.
+	// UVPGParams is neigh-guaranteed to be populated with lenghts, formats & oids
+	size_t param_size = 0;
+	for(int ix = 0; ix < rhs.param_count; ++ix)
+	{
+		param_size += rhs.param_length[ix];
+	}
+	set_param_size(param_size / sizeof(int64_t));
+	// get & copy all parameters
+	for(int ix = 0; ix < rhs.param_count; ++ix)
+	{
+		add(rhs.param_values[ix], rhs.param_length[ix], rhs.param_format[ix], rhs.param_oid[ix], true);
+	}
+}
+
 UVPGParams::~UVPGParams()
 {
 	
@@ -62,10 +80,18 @@ char *UVPGParams::alloc(size_t size)
 	return mem;
 }
 
-inline void UVPGParams::add(const char *input, int length, int format, Oid oid)
+inline void UVPGParams::add(const char *input, int length, int format, Oid oid, bool dup)
 {
+	const char *data = input;
+	if(dup)
+	{
+		// we probably only want to dup if we're using the copy constructor
+		char *mem = alloc(length);
+		memcpy(mem, input, length);
+		data = mem;
+	}
 	set_param_size(param_count + 1);
-	param_values[param_count] = input;
+	param_values[param_count] = data;
 	param_length[param_count] = length;
 	param_format[param_count] = format;
 	param_oid[param_count]    = oid;

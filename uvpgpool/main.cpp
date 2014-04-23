@@ -44,34 +44,35 @@ void on_periodic_timer(uv_timer_t *handle, int status)
 {
 	printf("\n********** Starting new run (%d) of periodic data\n", ++periodic_counter);
 	printf("%d queries in progress\n", counter);
-	if(counter >= 10) {
+	if(counter >= 30) {
 		printf("Too many queries in progress for my tastes\n");
 		return;
 	}
 	counter++;
 	UVPGPool *pool = (UVPGPool *)handle->data;
-	PGconn *conn = pool->getFreeConn();
-	if(conn)
+	for(int ix = 0; ix < 10; ++ix)
 	{
-		UVPGParams params(1);
-		
 		// character test
+		UVPGParams params(1);
 		params.add("Joe");
-		int res = PQsendQueryParams(conn,
-									"SELECT count(*) FROM users WHERE username ILIKE $1",
-									(int)params.size(), NULL, params.values(), params.lengths(), params.formats(), 1);
-		printf("result: %d\n", res);
-		pool->executeOnResult(conn, pg_result_cb);
+		
+		pool->sendQueryAndDo("SELECT userid, password, suspended, extra_permissions "
+							 "FROM users WHERE UPPER(username) = UPPER($1)",
+							 &params, 0, NULL, pg_result_cb);
+		//int res = PQsendQueryParams(conn,
+		//							"SELECT userid, password, suspended, extra_permissions "
+		//							"FROM users WHERE UPPER(username) = UPPER($1)",
+		//							(int)params.size(), NULL, params.values(), params.lengths(), params.formats(), 1);
+		//printf("result: %d\n", res);
+		//pool->executeOnResult(conn, pg_result_cb);
 	}
-	else
-		printf("Too busy!\n");
 }
 
 
 int main(int argc, const char * argv[])
 {
 	unsigned timer_first_ms = 1000;
-	unsigned timer_repeat_ms = 200;
+	unsigned timer_repeat_ms = 10;
 	uv_loop_t *loop = uv_default_loop();
 	
 	printf("Creating DB connection pool\n");

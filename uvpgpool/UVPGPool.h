@@ -48,7 +48,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <libpq-fe.h>
 #include <vector>
 #include <atomic>
+#include <queue>
 #include <cstdint>
+
+#include "UVPGParams.h"
 
 typedef void (*uvpg_result_cb)(PGconn *conn, void *data);
 
@@ -66,7 +69,7 @@ class UVPGConnEntry
 {
 public:
 	UVPGConnEntry() : conn(NULL) { status.store(ConnStatus::cs_invalid); };
-	UVPGConnEntry(const UVPGConnEntry &rhs) : status(rhs.status.load()), conn(rhs.conn) { };
+	UVPGConnEntry(const UVPGConnEntry &rhs) : conn(rhs.conn) { status.store(rhs.status.load()); };
 	std::atomic<uint8_t> status;
 	PGconn *conn;
 	uv_poll_t poller; // only one uv_poll_s per connection.
@@ -85,6 +88,17 @@ public:
 class UVPGPool
 {
 private:
+	class UVPGQuery
+	{
+	public:
+		char *query;
+		UVPGParams *params;
+		int resultFormat;
+		void *userdata;
+		uvpg_result_cb callback;
+		uvpg_result_cb failure_cb;
+	};
+private:
 	uv_loop_t *eventloop;
 	const char *connstring;
 	uv_async_t reset_msg;
@@ -94,6 +108,7 @@ private:
 	unsigned max_free_connections;
 	
 	std::vector<UVPGConnEntry *> connections;
+	std::queue<UVPGQuery *> pendingQueries;
 	
 	void watchConnectionState(UVPGConnEntry *newconn);
 	void createNewConnections(unsigned count=0);
@@ -120,6 +135,9 @@ public:
 	void executeOnResult(uvpg_result *in_conn, uvpg_result_cb callback, uvpg_result_cb failure_cb=NULL);
 	void executeOnResult(PGconn *in_conn, uvpg_result_cb callback, uvpg_result_cb failure_cb=NULL);
 	void executeOnResult(PGconn *in_conn, void *data, uvpg_result_cb callback, uvpg_result_cb failure_cb=NULL);
+	
+	void sendQueryAndDo(const char *query, UVPGParams *params, int resultFormat, void *data, uvpg_result_cb callback, uvpg_result_cb failure_cb=NULL);
+	void checkQueuedRequests();
 };
 
 #endif /* defined(__UVPGPool__) */
