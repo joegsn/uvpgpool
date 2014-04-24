@@ -40,17 +40,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <assert.h>
 
 UVPGParams::UVPGParams()
-: param_count(0), alloc_pos(0)
+: param_count(0), alloc_data(NULL), alloc_pos(0), alloc_size(0)
 {
-	set_param_size(1);
+	set_param_size(5);
 }
 UVPGParams::UVPGParams(size_t starting_size)
-: param_count(0), alloc_pos(0)
+: param_count(0), alloc_data(NULL), alloc_pos(0), alloc_size(0)
 {
 	set_param_size(starting_size);
 }
 UVPGParams::UVPGParams(const UVPGParams &rhs)
-: param_count(0), alloc_pos(0)
+: param_count(0), alloc_data(NULL), alloc_pos(0), alloc_size(0)
 {
 	// copy, allocating our own space for all paramters.
 	// UVPGParams is neigh-guaranteed to be populated with lenghts, formats & oids
@@ -69,12 +69,26 @@ UVPGParams::UVPGParams(const UVPGParams &rhs)
 
 UVPGParams::~UVPGParams()
 {
-	
+	if(alloc_data)
+		free(alloc_data);
 }
 
 char *UVPGParams::alloc(size_t size)
 {
-	assert(alloc_pos + size < alloc_data.capacity());
+	if(alloc_pos + size > alloc_size)
+	{
+		char *newmem = (char *)realloc(alloc_data, alloc_pos + size);
+		if(newmem == NULL)
+		{
+			printf("Error allocating memory for UVPGParams.\n");
+			throw "";
+		}
+		else
+		{
+			alloc_data = newmem;
+			alloc_size = alloc_pos + size;
+		}
+	}
 	char *mem = &(alloc_data[alloc_pos]);
 	alloc_pos += size;
 	return mem;
@@ -90,11 +104,10 @@ inline void UVPGParams::add(const char *input, int length, int format, Oid oid, 
 		memcpy(mem, input, length);
 		data = mem;
 	}
-	set_param_size(param_count + 1);
-	param_values[param_count] = data;
-	param_length[param_count] = length;
-	param_format[param_count] = format;
-	param_oid[param_count]    = oid;
+	param_values.push_back(data);
+	param_length.push_back(length);
+	param_format.push_back(format);
+	param_oid.push_back(oid);
 	++param_count;
 }
 
@@ -105,9 +118,19 @@ bool UVPGParams::set_param_size(const size_t size)
 	// reserve an additional space for allocations, since if we do it
 	// all on the fly later, we'll need it.
 	size_t new_alloc_data_size = (size + 1) * sizeof(int64_t);
-	if(new_alloc_data_size > alloc_data.capacity())
+	if(new_alloc_data_size > alloc_size)
 	{
-		alloc_data.reserve(new_alloc_data_size);
+		char *newmem = (char *)realloc(alloc_data, new_alloc_data_size);
+		if(newmem == NULL)
+		{
+			printf("Error allocating memory for UVPGParams.\n");
+			throw "";
+		}
+		else
+		{
+			alloc_data = newmem;
+			alloc_size = new_alloc_data_size;
+		}
 	}
 	
 	if(param_values.capacity() < size && size > 0)

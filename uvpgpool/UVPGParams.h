@@ -57,8 +57,9 @@ private:
 	std::vector<int>param_format;
 	std::vector<Oid>param_oid;
 	
-	std::vector<char> alloc_data;
+	char *alloc_data;
 	size_t alloc_pos;
+	size_t alloc_size;
 	char *alloc(size_t size);
 	
 	void add(const char *input, int length, int format, Oid oid, bool dup=false);
