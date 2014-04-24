@@ -283,6 +283,8 @@ void UVPGPool::disconnect(UVPGConnEntry *entry)
 }
 UVPGConnEntry *UVPGPool::findConnEntry(PGconn *conn)
 {
+	if(!conn)
+		return NULL;
 	size_t count = connections.size();
 	for(size_t ix = 0; ix < count; ++ix)
 	{
@@ -293,7 +295,7 @@ UVPGConnEntry *UVPGPool::findConnEntry(PGconn *conn)
 }
 
 // routines for getting a connection, and getting rid of it (because you're done).
-PGconn *UVPGPool::getFreeConn()
+PGconn *UVPGPool::getFreeConn(bool add_more)
 {
 	// grab the first available connection (least recently used)
 	// shove it onto the busy list.
@@ -319,26 +321,29 @@ PGconn *UVPGPool::getFreeConn()
 			// end this connection, and get a new one.
 			PQfinish(nextconn);
 			createNewConnections();
-			nextconn = getFreeConn();
+			nextconn = getFreeConn(add_more);
 		default:
 			break;
 	}
 	
 	// see if we need to create a new connection, if we're full.
-	size_t ccount = connections.size();
-	unsigned free_count = 0;
-	for(size_t ix = 0; ix < ccount; ++ix)
+	if(add_more)
 	{
-		int connstatus = connections[ix]->status.load();
-		if(connstatus == ConnStatus::cs_available ||
-		   connstatus == ConnStatus::cs_connecting)
-			free_count++;
+		size_t ccount = connections.size();
+		unsigned free_count = 0;
+		for(size_t ix = 0; ix < ccount; ++ix)
+		{
+			int connstatus = connections[ix]->status.load();
+			if(connstatus == ConnStatus::cs_available ||
+			   connstatus == ConnStatus::cs_connecting)
+				free_count++;
+		}
+		if(free_count < min_free_connections)
+		{
+			createNewConnections();
+		}
 	}
-	if(free_count < min_free_connections)
-	{
-		createNewConnections();
-	}
-	
+
 	return nextconn;
 }
 void UVPGPool::returnConnection(PGconn *in_conn)
@@ -405,7 +410,6 @@ void UVPGPool::executeOnResult(PGconn *in_conn, void *data, uvpg_result_cb callb
 
 void UVPGPool::sendQueryAndDo(const char *query, UVPGParams *params, int resultFormat, void *data, uvpg_result_cb callback, uvpg_result_cb failure_cb)
 {
-	printf("sendQuery&Do: query: %s\n", query);
 	// try to get a free connection
 	PGconn *conn = getFreeConn();
 	// if success, do PQsendQueryParams,
@@ -432,12 +436,10 @@ void UVPGPool::sendQueryAndDo(const char *query, UVPGParams *params, int resultF
 void UVPGPool::checkQueuedRequests()
 {
 	// check if we have any queued requests, and try to execute them.
-	printf("pending queries: %lu\n", pendingQueries.size());
-	//printf("Pending queries: %s\n", pendingQueries.empty() ? "no" : "yes");
 	while(!pendingQueries.empty())
 	{
 		// try to get a free connection
-		PGconn *conn = getFreeConn();
+		PGconn *conn = getFreeConn(false);
 		if(conn)
 		{
 			// execute this pending query.

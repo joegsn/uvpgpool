@@ -126,7 +126,7 @@ public:
 	void checkIdleConnections();
 	
 	// routines for getting a connection, and getting rid of it (because you're done).
-	PGconn *getFreeConn();
+	PGconn *getFreeConn(bool add_more=true);
 	void returnConnection(PGconn *in_conn);
 	
 	// various handling routines for how to execute a callback when a result comes in.
