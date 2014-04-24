@@ -111,7 +111,7 @@ static void uvpg_connection_poll(uv_poll_t *poll)
 {
 	uvpg_result *result = (uvpg_result *)(poll->data);
 	UVPGConnEntry *entry = result->entry;
-	UVPGPool *pool = (UVPGPool *)&(result->data);
+	UVPGPool *pool = (UVPGPool *)(result->data);
 	
 	switch(PQconnectPoll(entry->conn))
 	{
