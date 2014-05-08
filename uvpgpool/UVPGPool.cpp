@@ -143,9 +143,10 @@ static void uvpg_connection_reset(uv_async_t *async, int status)
 // UVPGPool
 //
 
-UVPGPool::UVPGPool(uv_loop_t *in_loop, const char *in_connstring, unsigned in_min_connections, unsigned in_min_free_connections, unsigned in_max_free_connections)
-: eventloop(in_loop), connstring(in_connstring), min_connections(in_min_connections),
-min_free_connections(in_min_free_connections), max_free_connections(in_max_free_connections)
+UVPGPool::UVPGPool(uv_loop_t *in_loop, const char *in_connstring, unsigned in_min_connections, unsigned in_min_free_connections, unsigned in_max_connections, unsigned in_max_free_connections)
+: eventloop(in_loop), connstring(in_connstring),
+  min_connections(in_min_connections), max_connections(in_max_connections),
+  min_free_connections(in_min_free_connections), max_free_connections(in_max_free_connections)
 {
 	createNewConnections(min_connections);
 	uv_async_init(eventloop, &reset_msg, uvpg_connection_reset);
@@ -201,6 +202,12 @@ void UVPGPool::createNewConnections(unsigned newcount)
 			}
 		}
 	}
+	// verify that we're not pas our max connection size.
+	if(newcount + connections.size() > max_connections)
+		newcount = max_connections - (unsigned)connections.size();
+	if(newcount <= 0)
+		return;
+	
 	// now that we've grabbed all the inactive connections we can, create new ones until
 	// we have enough free connections.
 	for( ; created_count < newcount; ++created_count)
@@ -297,9 +304,10 @@ UVPGConnEntry *UVPGPool::findConnEntry(PGconn *conn)
 // routines for getting a connection, and getting rid of it (because you're done).
 PGconn *UVPGPool::getFreeConn(bool add_more)
 {
-	// grab the first available connection (least recently used)
+	// grab the first available connection
 	// shove it onto the busy list.
 	PGconn *nextconn = NULL;
+	size_t disconnectedCount = 0;
 	size_t count = connections.size();
 	for(unsigned ix = 0; ix < count; ++ix)
 	{
@@ -308,9 +316,15 @@ PGconn *UVPGPool::getFreeConn(bool add_more)
 			nextconn = connections[ix]->conn;
 			break;
 		}
+		if(connections[ix]->status == ConnStatus::cs_invalid)
+			disconnectedCount++;
 	}
 	if(nextconn == NULL)
 	{
+		// no available connections.  Have the system create some
+		// if there are disconnected entries.
+		if(disconnectedCount > 0)
+			createNewConnections();
 		return NULL;
 	}
 	
@@ -338,12 +352,13 @@ PGconn *UVPGPool::getFreeConn(bool add_more)
 			   connstatus == ConnStatus::cs_connecting)
 				free_count++;
 		}
-		if(free_count < min_free_connections)
+		// create them only if there's room.
+		if(free_count < min_free_connections && connections.size() < max_connections)
 		{
 			createNewConnections();
 		}
 	}
-
+	
 	return nextconn;
 }
 void UVPGPool::returnConnection(PGconn *in_conn)
@@ -378,6 +393,28 @@ void UVPGPool::returnConnection(PGconn *in_conn)
 				PQreset(entry->conn);
 				entry->status.store(ConnStatus::cs_connecting);
 				watchConnectionState(entry);
+		}
+	}
+	// see if we need to drop any connections, if we have too many.
+	size_t ccount = connections.size();
+	unsigned free_count = 0;
+	for(size_t ix = 0; ix < ccount; ++ix)
+	{
+		int connstatus = connections[ix]->status.load();
+		if(connstatus == ConnStatus::cs_available)
+			free_count++;
+	}
+	if(free_count > max_free_connections && connections.size() > min_connections)
+	{
+		// Closing a connection here.  preferably, the last in the vector,
+		// as it's the least likely to be used.
+		for(size_t ix = connections.size(); ix > 0; --ix)
+		{
+			if(atomicCAS(&(connections[ix-1]->status), &(ConnStatus::cs_available), ConnStatus::cs_busy))
+			{
+				disconnect(connections[ix-1]);
+				break;
+			}
 		}
 	}
 }
@@ -439,7 +476,7 @@ void UVPGPool::checkQueuedRequests()
 	while(!pendingQueries.empty())
 	{
 		// try to get a free connection
-		PGconn *conn = getFreeConn(false);
+		PGconn *conn = getFreeConn(true);
 		if(conn)
 		{
 			// execute this pending query.

@@ -104,6 +104,7 @@ private:
 	uv_async_t reset_msg;
 	
 	unsigned min_connections;
+	unsigned max_connections;
 	unsigned min_free_connections;
 	unsigned max_free_connections;
 	
@@ -117,7 +118,7 @@ private:
 	UVPGConnEntry *findConnEntry(PGconn *conn);
 	
 public:
-	UVPGPool(uv_loop_t *in_loop, const char *in_connstring, unsigned in_min_connections=5, unsigned in_min_free_connections=2, unsigned in_max_free_connections=7);
+	UVPGPool(uv_loop_t *in_loop, const char *in_connstring, unsigned in_min_connections=5, unsigned in_min_free_connections=2, unsigned in_max_connections=20, unsigned in_max_free_connections=7);
 	~UVPGPool();
 	
 	// routines used internally for a connection.
