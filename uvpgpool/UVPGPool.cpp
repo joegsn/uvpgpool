@@ -148,6 +148,16 @@ UVPGPool::UVPGPool(uv_loop_t *in_loop, const char *in_connstring, unsigned in_mi
   min_connections(in_min_connections), max_connections(in_max_connections),
   min_free_connections(in_min_free_connections), max_free_connections(in_max_free_connections)
 {
+	// some sanity checks for input.
+	if(min_connections <= 0)
+		min_connections = 1;
+	if(max_connections < min_connections)
+		max_connections = min_connections;
+	if(max_free_connections < min_free_connections)
+		max_free_connections = min_free_connections + 1;
+	if(max_free_connections < min_connections)
+		max_free_connections = min_connections + 1;
+	
 	createNewConnections(min_connections);
 	uv_async_init(eventloop, &reset_msg, uvpg_connection_reset);
 	reset_msg.data = this;
